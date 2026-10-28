@@ -1,5 +1,7 @@
 # EightQueens
 
+[![CI](https://github.com/kstsiam/EightQueens/actions/workflows/ci.yml/badge.svg)](https://github.com/kstsiam/EightQueens/actions/workflows/ci.yml)
+
 An interactive teaching project that solves the classic **8-queens puzzle** with three different approaches and visualizes the results, so you can *see* how algorithm choice changes the size of the search space and the running time.
 
 ## Learning objectives
@@ -16,7 +18,7 @@ After working through this project you should be able to:
 
 Place 8 queens on an 8×8 chessboard so that no two queens attack each other. A queen attacks along its row, its column, and both diagonals. A placement is therefore valid only if **no two queens share a row, a column, or a diagonal**.
 
-The code checks these constraints in `CheckHorizontal`, `CheckVertical` and `CheckDiagonal` (`Form1.cs`), and validates a whole board with `CheckSolution`.
+The code checks these constraints in the `CheckSolution` class (`EightQueens/CheckSolution.cs`): `CheckSolution.HasConflict` validates a whole board using the private `CheckHorizontal`, `CheckVertical` and `CheckDiagonal` helpers.
 
 ## The three approaches
 
@@ -35,6 +37,43 @@ Each approach prunes the search space further than the last.
 1. Why is the blind search space 64!/56! and not 64⁸?
 2. Why does the permutation approach still need to check diagonals?
 3. By what factor does each step shrink the search space?
+
+## Engineering overview
+
+Beyond the teaching material, the repository documents how the code was modernised safely: characterization tests first, then refactoring, then tooling.
+
+### Refactoring
+
+| Change | Details |
+|---|---|
+| **Conflict checking extracted from the form** | The row, column and diagonal checks moved out of `Form1.cs` (the WinForms UI) into a static `CheckSolution` class in `EightQueens/CheckSolution.cs`. `Form1` now just calls `CheckSolution.HasConflict(board, queenPos)`. The logic can be tested without any UI. |
+| **Tests before and during the refactor** | Characterization tests were added first, so behaviour was pinned down before the code moved. Test helpers live in `BoardHelpers`. |
+| **Retargeted to .NET Framework 4.6.2** | Previously 4.6.1. |
+| **SDK-style projects** | Both projects were converted so that `dotnet build` and `dotnet test` work from the command line, with NuGet lock files (`packages.lock.json`). |
+
+### Toolchain
+
+| Concern | Tool |
+|---|---|
+| Language / runtime | C#, Windows Forms, .NET Framework 4.6.2 (`net462`) |
+| Build | .NET SDK (`dotnet build`), SDK-style projects, NuGet with lock files |
+| Unit tests | [xUnit.net](https://xunit.net/) 2.9 on `Microsoft.NET.Test.Sdk` (ported from MSTest) |
+| Coverage | [coverlet](https://github.com/coverlet-coverage/coverlet) collector, [ReportGenerator](https://github.com/danielpalme/ReportGenerator) for HTML reports |
+| Static analysis | `Microsoft.CodeAnalysis.NetAnalyzers` (CA rules, `latest-recommended`), IDE style rules enforced in the build, `.editorconfig`, `dotnet format`, NuGet vulnerability and deprecation checks |
+| Automation | `tools/analyze.ps1` runs every analysis step; GitHub Actions (`.github/workflows/ci.yml`) builds, analyses, tests and uploads coverage on every push and pull request |
+
+See [CODE_ANALYSIS_GUIDELINES.md](CODE_ANALYSIS_GUIDELINES.md) for the rules, how to change them, and the reasoning behind them.
+
+### Tests
+
+The `EightQueens.Tests` project has **10 xUnit tests, all passing** (last run: `dotnet test` on the .NET 10 SDK, 0 failed, 0 skipped):
+
+| Test class | What it checks |
+|---|---|
+| `CheckSolutionTests` | A known solution has no conflict; two queens on the same row, column or diagonal are detected; queens a knight's move apart are accepted; **exactly 92 of the 8! = 40,320 permutations** are valid solutions. |
+| `KnownSolutionsTests` | The reference list holds the 92 distinct known solutions, each has no conflict, the enumerated solutions equal the reference list, and they form the **12 fundamental solutions** (up to rotation and reflection). |
+
+**Coverage** (coverlet, Cobertura, designer code excluded): `CheckSolution` has **100% line and 100% branch coverage**. The whole assembly is about **25% line / 48% branch**, because the WinForms UI in `Form1` and the search loops are not unit tested. They are exercised by running the app.
 
 ## Running the application
 
@@ -100,11 +139,19 @@ The executable is written to `EightQueens\bin\Debug\net462\EightQueens.exe` (or 
 
 ### Test
 
-The unit tests (xUnit.net) live in the `EightQueens.Tests` project and check the Queen conflict detection, including that exactly 92 of the 8! = 40,320 permutations are valid solutions. Run them from the repository root:
+The unit tests (xUnit.net, 10 tests) live in the `EightQueens.Tests` project and check the Queen conflict detection, including that exactly 92 of the 8! = 40,320 permutations are valid solutions. See [Engineering overview](#engineering-overview) for details. Run them from the repository root:
 
 ```powershell
 dotnet test EightQueens.sln
 ```
+
+### Code analysis
+
+```powershell
+pwsh tools/analyze.ps1
+```
+
+This runs the warnings-as-errors build, the format check, the package vulnerability and deprecation checks, and the tests with coverage. CI runs the same script.
 
 ### Code coverage
 
